@@ -1,0 +1,120 @@
+<templates xml:space="preserve">
+    <t t-name="crm_dashboard.chartjs_sample_crm" owl="1">
+        <div class="big-card p-4 rounded-4 mt-4">
+            
+            <!-- 🏷️ Navbar Card with Date Filters -->
+            <div class="navbar-card d-flex flex-wrap flex-md-row flex-column justify-content-between align-items-center p-2 mb-3 shadow rounded-4 bg-white">
+                <div class="d-flex flex-column flex-md-row gap-2 w-100">
+                    <input type="text" class="form-control" placeholder="Search..." t-on-input="onSearchQueryChange"/>
+                    <div class="d-flex gap-2">
+                        <input type="date" class="form-control" t-model="dateFilters.startDate"/>
+                        <span class="align-self-center">to</span>
+                        <input type="date" class="form-control" t-model="dateFilters.endDate"/>
+                        <button class="btn btn-primary" t-on-click="applyDateFilter">Apply</button>
+                        <button class="btn btn-secondary" t-on-click="resetDateFilter">Reset</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 📊 Statistic Cards - Only Call Center -->
+            <div class="d-flex flex-wrap flex-md-nowrap gap-3 mb-4">
+                <div class="stat-card call-center-card text-start p-3 rounded-5 shadow position-relative" t-on-click="() => goToCRMPage('callcenter')">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <h6 class="text-dark">Call Center Leads</h6>
+                    </div>
+                    <div class="value-oval position-absolute bottom-0 start-0 ms-2 mb-2">
+                        <p class="fw-bold fs-6"><t t-esc="stats.totalCallCenterLeads"/></p>
+                    </div>
+                    <span class="crm-icon position-absolute bottom-0 end-0 me-2 mb-2">📞</span>
+                </div>
+            </div>
+
+            <!-- 📈 Charts Section -->
+            <div class="charts-container d-flex flex-column flex-md-row gap-3">
+                <div class="chart-container border rounded-4 p-3 bg-white shadow">
+                    <canvas t-ref="barChart" class="chart-canvas"></canvas>
+                </div>
+                <div class="chart-container border rounded-4 p-3 bg-white shadow">
+                    <canvas t-ref="pieChart" class="chart-canvas"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <style>
+            .big-card {
+                background: #f5f8fb;
+                padding: 20px;
+                border-radius: 6px;
+                margin: 20px;
+                max-height: 90vh;
+                overflow-y: auto;
+            }
+
+            .navbar-card {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+                justify-content: space-between;
+                align-items: center;
+                padding: 10px;
+            }
+            .form-control {
+                padding: 5px;
+            }
+
+            /* Stat Card */
+            .stat-card {
+                width: 250px;
+                border-radius: 6px;
+                position: relative;
+                height: 120px;
+                color: black;
+            }
+            .call-center-card {
+                background: #dcfce7;
+            }
+
+            .value-oval {
+                width: 70px;
+                height: 40px;
+                background: #e0e0e0;
+                border-radius: 50px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                bottom: 0;
+            }
+
+            .crm-icon {
+                font-size: 24px;
+                opacity: 0.8;
+                bottom: 0;
+            }
+
+            /* Charts Layout */
+            .charts-container {
+                width: 100%;
+            }
+            .chart-container {
+                flex: 1;
+                min-height: 300px;
+                min-width: 300px;
+            }
+
+            @media (max-width: 768px) {
+                .big-card {
+                    overflow-y: auto;
+                }
+                .navbar-card {
+                    flex-direction: column;
+                }
+                .charts-container {
+                    flex-direction: column;
+                }
+                .stat-card {
+                    width: 100%;
+                }
+            }
+        </style>
+    </t>
+</templates>
