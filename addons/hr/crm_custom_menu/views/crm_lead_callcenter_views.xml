@@ -6,11 +6,11 @@
             <form string="Call Center Lead">
                 <header>
                     <div class="d-flex justify-content-between align-items-center mb-4" style=" margin-right: 25px;">
-                        <div class="d-flex align-items-center">
+                        <!-- <div class="d-flex align-items-center">
                             <img src="/crm_custom_menu/static/description/temerlogo.png" alt="Logo" style="height: 40px; margin-right: 25px;" />
-                            <!-- <h2 style="margin: 0; color: #2c3e50;">Call Center</h2> -->
-                        </div>
-                        <button name="action_create_crm_lead" string="💾 Save" type="object"
+                            <h2 style="margin: 0; color: #2c3e50;">Call Center</h2>
+                        </div> -->
+                        <button name="action_create_crm_lead" string="📤 Send to pipline" type="object"
                                 class="btn-primary oe_highlight"
                                 style="background-color: #3b82f6; color: white; border-radius: 6px; padding: 8px 16px; font-weight: bold;" />
                     </div>
@@ -32,7 +32,7 @@
                         <field name="country_id" string="🌍 Country"/>
                                         <!-- <field name="new_phone" string="Primary Phone"/>
                                         <field name="source_id" readonly="[('is_call_center_user', '=', True)]"/> -->
-                                            <field name="new_phone" string="📞 Primary Phone"/>
+                                            <field name="new_phone" string="📞 Phone"/>
     <field name="source_id" string="🎯 Source" readonly="[('is_call_center_user', '=', True)]"/>
                                     </group>
                                 </div>
@@ -47,12 +47,12 @@
                                         Additional Information
                                     </h5>
                          <group>
-    <field name="site_ids" widget="many2many_tags" string="📍 Sites"/>
-    <field name="sales_person" string="🧑‍💼 Salesperson" readonly="1"/>
-    <field name="wing_id" string="🕊️ Wing" readonly="1"/>
-    <field name="assigned_manager_id" string="👨‍💼 Assigned Manager" readonly="1"/>
-      <field name="phone_number_message" string="👨‍💼 phone_number_message" readonly="1"/>
-</group>
+                        <field name="site_ids" widget="many2many_tags" string="📍 Sites"/>
+                        <field name="sales_person" string="🧑‍💼 Call center person" readonly="1"/>
+                        <field name="wing_id" string="🕊️ Wing" readonly="1"/>
+                        <field name="assigned_manager_id" string="👨‍💼 Assigned Manager" readonly="1"/>
+                        <field name="phone_number_message" string="✉️ Warnning Message" readonly="1"/>
+                    </group>
 
                                 </div>
                             </div>

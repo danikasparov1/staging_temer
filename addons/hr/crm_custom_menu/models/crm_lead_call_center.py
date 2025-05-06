@@ -33,7 +33,7 @@ class CrmLeadCallCenter(models.Model):
         string="Excluded Phone Numbers"
     )
 
-    new_phone = fields.Char(string="Primary Phone Number", tracking=True)
+    new_phone = fields.Char(string="Phone No", tracking=True)
     source_id = fields.Many2one(
         'utm.source',
         string="Lead Source",

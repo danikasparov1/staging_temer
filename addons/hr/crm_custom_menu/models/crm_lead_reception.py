@@ -26,9 +26,10 @@ class CrmReception(models.Model):
     customer_name = fields.Char(string='Customer Name', required=True, tracking=True)
     site_ids = fields.Many2many('property.site', string="Preferred Sites", tracking=True)
     country_id = fields.Many2one('res.country', string="Country", default=lambda self: self.env.ref('base.et').id)
-    new_phone = fields.Char(string="Primary Phone", tracking=True)
+    new_phone = fields.Char(string="Phone no", tracking=True)
     secondary_phone = fields.Char(string="Secondary Phone")
     phone_prefix = fields.Char(string="Phone Prefix", compute="_compute_phone_prefix")
+    phone_number = fields.Char(string="Phone Number")
     
     # Phone number tracking
     full_phone = fields.Many2many(
@@ -74,6 +75,13 @@ class CrmReception(models.Model):
         ('progress', 'In Progress'),
         ('done', 'Completed')
     ], string="Status", default='draft', tracking=True)
+
+
+    crm_reception_phone_id = fields.Many2one(
+        'crm.reception.phone',
+        string="Phone",
+        required=False  # or not
+    )
 
     # Computed Methods
     @api.depends('customer_name', 'site_ids')
@@ -127,48 +135,45 @@ class CrmReception(models.Model):
 
     # Action Methods
     def action_create_crm_lead(self):
-        """Create CRM Lead from Reception record with Walk In source"""
+        """Create a CRM Lead using ONLY the primary phone number (new_phone)"""
         self.ensure_one()
+        
+        # Validate required fields
+        if not self.customer_name or not self.customer_name.strip():
+            raise ValidationError(_("Customer name is required"))
         
         if not self.new_phone:
             raise ValidationError(_("Primary phone number is required"))
         
-        # Clean and validate phone
-        clean_phone = self._clean_phone_number(self.new_phone)
+        # Clean and validate the phone number
+        clean_phone = self.new_phone.replace('+251', '').replace('251', '').strip()
+        if not clean_phone:
+            raise ValidationError(_("Invalid phone number format"))
         
-        # Get or create phone record
-        phone_record = self._get_or_create_phone_record(clean_phone)
-        
-        # Get Walk In source
-        walk_in_source = self.env['utm.source'].search([('name', '=', 'Walk In')], limit=1)
-        if not walk_in_source:
-            walk_in_source = self.env['utm.source'].create({'name': 'Walk In'})
-        
-        # Prepare lead values
+        # Handle source_id
+        source_id = False
+        if self.source_id:
+            source_id = self.source_id.id
+        else:
+            default_source = self.env['utm.source'].search([('name', '=', '6033')], limit=1)
+            if not default_source:
+                default_source = self.env['utm.source'].create({'name': '6033'})
+            source_id = default_source.id
+
+        # Prepare lead values - using ONLY the clean phone number (no phone_ids)
         lead_values = {
-            'name': self.name,
+            'name': self.name or f"Lead from {self.customer_name.strip()}",
             'customer_name': self.customer_name.strip(),
-            'phone_no': clean_phone,
-            'phone_ids': [(4, phone_record.id)],
+            'phone_no': clean_phone,  # Only the primary phone number
             'site_ids': [(6, 0, self.site_ids.ids)],
             'country_id': self.country_id.id,
-            'source_id': walk_in_source.id,
-            'user_id': self.assigned_manager_id.id or self.env.uid,
+            'source_id': source_id,
+            'user_id': self.assigned_manager_id.id,
             'type': 'opportunity',
-            'description': "Created from Reception (Walk-in Customer)",
         }
-        
-        # Create the lead
+
+        # Create the lead (without linking any phone records)
         lead = self.env['crm.lead'].create(lead_values)
-        
-        # Update phone record with references
-        phone_record.write({
-            'crm_lead_id': lead.id,
-            'reception_record_id': self.id
-        })
-        
-        # Update reception record state
-        self.write({'state': 'done'})
         
         return {
             'name': _('CRM Lead'),
@@ -177,6 +182,8 @@ class CrmReception(models.Model):
             'res_id': lead.id,
             'type': 'ir.actions.act_window',
         }
+
+
 
     # Helper Methods
     def _clean_phone_number(self, phone):
@@ -198,83 +205,138 @@ class CrmReception(models.Model):
         return phone_record
 
     def _get_next_available_wing(self):
-        """Distribute leads evenly among sales wings"""
-        wings = self.env['property.wing.config'].search([('manager_id', '!=', False)], order='id')
-        if not wings:
-            return False
-            
-        # Find wing with fewest leads
-        wing_counts = {}
-        for wing in wings:
-            wing_counts[wing.id] = self.search_count([
-                ('assigned_manager_id', '=', wing.manager_id.id)
-            ])
-        
-        min_count = min(wing_counts.values()) if wing_counts else 0
-        available_wings = [w for w in wings if wing_counts.get(w.id, 0) == min_count]
-        
-        # Get next wing in rotation
-        last_wing_id = int(self.env['ir.config_parameter'].sudo().get_param(
-            'crm_reception.last_assigned_wing_id', 0))
-        
-        next_wing = available_wings[0]  # Default to first available
-        
-        if last_wing_id:
-            last_wing = self.env['property.wing.config'].browse(last_wing_id)
-            if last_wing.exists() and last_wing in available_wings:
-                # Find next wing after last assigned
-                next_wings = [w for w in available_wings if w.id > last_wing_id]
-                next_wing = next_wings[0] if next_wings else available_wings[0]
-        
-        # Save for next assignment
-        self.env['ir.config_parameter'].sudo().set_param(
-            'crm_reception.last_assigned_wing_id', next_wing.id)
-        
-        return next_wing
+            """
+            Get the next available wing based on the number of leads assigned to its manager.
+            Distribute leads evenly among managers.
+            """
+            wings = self.env['property.wing.config'].search([], order='id')
+
+            if not wings:
+                return False
+
+            # Calculate the number of leads assigned to each wing manager
+            wing_manager_lead_counts = {}
+            for wing in wings:
+                if not wing.manager_id:
+                    continue  # Skip wings without managers
+                wing_manager_lead_counts[wing.id] = self.search_count([
+                    ('assigned_manager_id', '=', wing.manager_id.id)
+                ])
+
+            if not wing_manager_lead_counts:
+                return False
+
+            # Find the minimum number of leads assigned to any wing manager
+            min_leads = min(wing_manager_lead_counts.values())
+
+            # Get a list of wings whose managers have the minimum number of leads
+            available_wings = [wing for wing in wings if wing.id in wing_manager_lead_counts and wing_manager_lead_counts[wing.id] == min_leads]
+
+            # System parameter to store last assigned wing
+            Param = self.env['ir.config_parameter'].sudo()
+            last_wing_id = Param.get_param('crm_custom_menu.last_assigned_wing_id', default=False)
+
+            if last_wing_id:
+                try:
+                    last_wing_id = int(last_wing_id)
+                    last_wing = self.env['property.wing.config'].browse(last_wing_id)
+                    if not last_wing.exists() or last_wing.id not in [wing.id for wing in available_wings]:
+                        last_wing = False
+                except ValueError:
+                    last_wing = False
+            else:
+                last_wing = False
+
+            # Determine the next wing
+            if last_wing:
+                candidate_wings = [wing for wing in available_wings if wing.id > last_wing.id]
+                if candidate_wings:
+                    next_wing = candidate_wings[0]
+                else:
+                    next_wing = available_wings[0]  # Cycle back to the first wing
+            else:
+                next_wing = available_wings[0]  # Start with the first wing
+
+            # Save the ID of the next assigned wing to system parameters
+            Param.set_param('crm_custom_menu.last_assigned_wing_id', next_wing.id)
+
+            return next_wing
 
     # CRUD Methods
     @api.model
     def create(self, vals):
-        # Handle phone number
         if 'new_phone' in vals and vals['new_phone']:
-            vals['phone_number_message'] = self._check_duplicate_phones(vals['new_phone'])
+            clean_phone = vals['new_phone'].replace('+251', '').replace('251', '').strip()
+            full_phone_number = f"+251{clean_phone}"
+            
+            message = ""
+            existing_phone = self.env['crm.reception.phone'].search([('name', '=', full_phone_number)], limit=1)
+            if existing_phone:
+                callcenter_record = self.search([('full_phone', 'in', existing_phone.ids)], limit=1)
+                customer_name = callcenter_record.customer_name if callcenter_record else "Unknown Customer"
+                message += f'Phone number already registered with {customer_name} Customer in Call Center CRM. '
+            
+            existing_lead = self.env['crm.lead'].search([('phone_ids', '=', full_phone_number)], limit=1)
+            if existing_lead:
+                customer_name = existing_lead.contact_name or existing_lead.partner_id.name or "Unknown Customer"
+                message += f'Phone number already registered with {customer_name} Customer in CRM Leads.'
+            
+            if message:
+                vals['phone_number_message'] = message
+            
+            phone_entry = self.env['crm.reception.phone'].search([('name', '=', full_phone_number)], limit=1)
+            if not phone_entry:
+                phone_entry = self.env['crm.reception.phone'].create({'name': full_phone_number})
+            vals['full_phone'] = [(4, phone_entry.id)]
         
-        # Set Walk In source for reception users
-        reception_group = self.env.ref('crm_custom_menu.group_reception', raise_if_not_found=False)
-        if reception_group and self.env.user in reception_group.users:
-            walk_in_source = self.env['utm.source'].search([('name', '=', 'Walk In')], limit=1)
-            if not walk_in_source:
-                walk_in_source = self.env['utm.source'].create({'name': 'Walk In'})
-            vals['source_id'] = walk_in_source.id
+        # Handle other create logic (wing, source, etc.)
+        call_center_group = self.env.ref('base.group_call_center', raise_if_not_found=False)
+        if call_center_group and self.env.user in call_center_group.users:
+            vals['source_id'] = 6033
         
-        # Assign wing and manager
         wing = self._get_next_available_wing()
-        if wing:
-            vals.update({
-                'wing_id': wing.id,
-                'assigned_manager_id': wing.manager_id.id
-            })
+        if not wing:
+            raise ValidationError(_('No sales wings are available. Please configure at least one sales wing.'))
         
-        record = super(CrmReception, self).create(vals)
+        vals['wing_id'] = wing.id
+        vals['assigned_manager_id'] = wing.manager_id.id if wing.manager_id else False
         
-        # Create phone record if number provided
-        if 'new_phone' in vals and vals['new_phone']:
-            clean_phone = self._clean_phone_number(vals['new_phone'])
-            phone_record = self._get_or_create_phone_record(clean_phone)
-            record.full_phone = [(4, phone_record.id)]
-        
-        return record
+        return super(CrmReception, self).create(vals)
+
 
     def write(self, vals):
         if 'new_phone' in vals and vals['new_phone']:
-            vals['phone_number_message'] = self._check_duplicate_phones(vals['new_phone'])
-            
-            # Create/update phone record
-            clean_phone = self._clean_phone_number(vals['new_phone'])
-            phone_record = self._get_or_create_phone_record(clean_phone)
-            vals['full_phone'] = [(4, phone_record.id)]
+            for record in self:
+                # Clean the phone number
+                clean_phone = vals['new_phone'].replace('+251', '').replace('251', '').strip()
+                full_phone_number = f"+251{clean_phone}"
+                
+                # Check for duplicates
+                message = ""
+                existing_phone = self.env['crm.reception.phone'].search([('name', '=', full_phone_number)], limit=1)
+                if existing_phone:
+                    callcenter_record = self.search([('full_phone', 'in', existing_phone.ids)], limit=1)
+                    customer_name = callcenter_record.customer_name if callcenter_record else "Unknown Customer"
+                    message += f'Phone number already registered with {customer_name} Customer in Call Center CRM. '
+                
+                existing_lead = self.env['crm.lead'].search([('phone_ids', '=', full_phone_number)], limit=1)
+                if existing_lead:
+                    customer_name = existing_lead.contact_name or existing_lead.partner_id.name or "Unknown Customer"
+                    message += f'Phone number already registered with {customer_name} Customer in CRM Leads.'
+                
+                if message:
+                    vals['phone_number_message'] = message
+                else:
+                    vals['phone_number_message'] = False
+                
+                # Add to full_phone if needed
+                phone_entry = self.env['crm.reception.phone'].search([('name', '=', full_phone_number)], limit=1)
+                if not phone_entry:
+                    phone_entry = self.env['crm.reception.phone'].create({'name': full_phone_number})
+                vals['full_phone'] = [(4, phone_entry.id)]
         
         return super(CrmReception, self).write(vals)
+
 
     def _check_duplicate_phones(self, phone_number):
         """Check for duplicate phone numbers across system"""
