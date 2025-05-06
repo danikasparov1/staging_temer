@@ -28,7 +28,7 @@
                     <span class="crm-icon position-absolute bottom-0 end-0 me-2 mb-2">📞</span>
                 </div>
                 
-                <div class="stat-card reception-card text-start p-3 rounded-5 shadow position-relative" t-on-click="goToReceptionPage">
+                <div class="stat-card reception-card text-start p-3 rounded-5 shadow position-relative" t-on-click="() => goToCRMPage('reception')">
                     <div class="d-flex justify-content-between align-items-start mb-2">
                         <h6 class="text-dark">Reception Leads</h6>
                     </div>
@@ -53,7 +53,7 @@
                         <h6 class="text-dark">Total Customers</h6>
                     </div>
                     <div class="value-oval position-absolute bottom-0 start-0 ms-2 mb-2">
-                        <p class="fw-bold fs-6"><t t-esc="stats.totalCustomers"/></p>
+                        <p class="fw-bold fs-6"><t t-esc="stats.customersnew"/></p>
                     </div>
                     <span class="crm-icon position-absolute bottom-0 end-0 me-2 mb-2">👥</span>
                 </div>
@@ -75,12 +75,18 @@
                 </div>
             </div>
 
-            <!-- 🏢 Reception Chart Section -->
+            <!-- 🏢 Reception Charts Section (same as Call Center) -->
             <div class="charts-container d-flex flex-column flex-md-row gap-3 mb-4">
                 <div class="chart-card border rounded-4 p-3 bg-white shadow">
-                    <h6 class="text-center">Reception Leads Status</h6>
+                    <h6 class="text-center">Reception Leads by Stage</h6>
                     <div class="chart-wrapper">
-                        <canvas t-ref="receptionChart" class="chart-canvas"></canvas>
+                        <canvas t-ref="receptionBarChart" class="chart-canvas"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card border rounded-4 p-3 bg-white shadow">
+                    <h6 class="text-center">Reception Stage Distribution</h6>
+                    <div class="chart-wrapper">
+                        <canvas t-ref="receptionPieChart" class="chart-canvas"></canvas>
                     </div>
                 </div>
             </div>
@@ -102,7 +108,7 @@
             </div>
 
             <!-- 👥 Customer Charts Section -->
-            <div class="charts-container d-flex flex-column flex-md-row gap-3">
+            <!-- <div class="charts-container d-flex flex-column flex-md-row gap-3">
                 <div class="chart-card border rounded-4 p-3 bg-white shadow">
                     <h6 class="text-center">Customers by Type</h6>
                     <div class="chart-wrapper">
@@ -115,7 +121,7 @@
                         <canvas t-ref="customerCountryChart" class="chart-canvas"></canvas>
                     </div>
                 </div>
-            </div>
+            </div> -->
         </div>
 
         <style>
@@ -191,8 +197,8 @@
             }
             .chart-card {
                 flex: 1;
-                min-height: 350px;
-                min-width: 300px;
+                min-height: 400px; /* Increased height for bigger charts */
+                min-width: 400px;  /* Increased width for bigger charts */
                 display: flex;
                 flex-direction: column;
             }
@@ -230,6 +236,7 @@
                 }
                 .chart-card {
                     min-height: 300px;
+                    min-width: 100%;
                 }
             }
         </style>
