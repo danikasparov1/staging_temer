@@ -4,13 +4,18 @@
         <field name="model">crm.reception</field>
         <field name="arch" type="xml">
             <form string="Reception Lead">
-                <header>
-                    <div class="d-flex justify-content-between align-items-center mb-4" style=" margin-right: 25px;">
-                        <button name="action_create_crm_lead" string="📤 Send to pipline" type="object"
-                                class="btn-primary oe_highlight"
-                                style="background-color: #3b82f6; color: white; border-radius: 6px; padding: 8px 16px; font-weight: bold;" />
-                    </div>
-                </header>
+                    <header>
+                        <field name="state_crm" widget="statusbar" statusbar_visible="draft,sent"/>
+
+                        <div class="d-flex justify-content-between align-items-center mb-4" style=" margin-right: 25px;">
+                        <button name="action_create_crm_lead" string="📤 Send to Pipeline" type="object"
+                            class="btn-primary oe_highlight"
+                            style="background-color: #3b82f6; color: white; border-radius: 6px; padding: 8px 16px; font-weight: bold;"
+                            invisible="state_crm !=  'draft'"
+                            />
+                        </div>
+
+                    </header>
                 <sheet>
                     <div class="row">
                         <!-- Left Column -->
@@ -59,6 +64,7 @@
                     </div>
 
                     <!-- Hidden fields -->
+            
                     <field name="phone_number" invisible="1"/>
                     <field name="full_phone" invisible="1"/>
                     <field name="phone_number_message" invisible="1"/>
@@ -68,6 +74,23 @@
                     <field name="message_ids"/>
                 </div>
             </form>
+        </field>
+    </record>
+
+    <record id="view_crm_reception_tree" model="ir.ui.view">
+        <field name="name">crm.reception.tree</field>
+        <field name="model">crm.reception</field>
+        <field name="arch" type="xml">
+            <tree string="Reception Lead">
+                <field name="name"/>
+                <field name="country_id"/>
+                <field name="new_phone"/>
+                <field name="assigned_manager_id"/>
+
+                <field name="source_id" widget="badge" options="{'class': {'Lead': 'bg-primary', 'Referral': 'bg-success'}}"/>
+                <field name="state_crm" widget="badge" options="{'class': {'new': 'bg-info', 'won': 'bg-success', 'lost': 'bg-danger'}}"/>
+
+            </tree>
         </field>
     </record>
 </odoo>

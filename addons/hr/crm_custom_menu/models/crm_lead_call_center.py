@@ -26,9 +26,15 @@ class CrmLeadCallCenter(models.Model):
     full_phone = fields.Many2many('crm.callcenter.phone', string="All Phone no", help="List of all phone numbers.", domain="[('id', 'not in', full_phone_ids)]" )
     secondary_phone = fields.Char(string="Secondary Phone", invisible=True)
     phone_prefix = fields.Char(string="Phone Prefix", compute="_compute_phone_prefix")
+    user_id = fields.Many2one(
+        'res.users',
+        string="Salesperson",
+        default=lambda self: self.env.user,
+        readonly=True,
+        help="The salesperson responsible for this lead."
+    )
     full_phone_ids = fields.Many2many(
         'crm.callcenter.phone',
-        compute="_compute_full_phone_ids",
         store=False,
         string="Excluded Phone Numbers"
     )
@@ -65,57 +71,80 @@ class CrmLeadCallCenter(models.Model):
         help="The wing manager assigned to this lead."
     )
     phone_number_message = fields.Char(string="Phone Number Message", readonly=True, help="Message displayed if the phone number is already registered.")
-
-
+    state_crm = fields.Selection([
+                ('draft', 'Draft'),
+                ('sent', 'Sent'),
+                ], string='Status', default='draft', tracking=True)
+    crm_stage_id = fields.Many2one(
+        'crm.stage',
+        string="CRM Stage",
+        help="The stage to assign to the lead when it is created."
+    )
+    
+    # Action Methods
     def action_create_crm_lead(self):
-        """Create a CRM Lead using ONLY the primary phone number (new_phone)"""
+        """Create a CRM Lead and assign explicitly to the assigned manager."""
         self.ensure_one()
+
+        if not self.assigned_manager_id:
+            raise ValidationError("No assigned manager for this reception record.")
+
+        assigned_user = self.assigned_manager_id
+
         
+    
         # Validate required fields
         if not self.customer_name or not self.customer_name.strip():
             raise ValidationError(_("Customer name is required"))
         
         if not self.new_phone:
             raise ValidationError(_("Primary phone number is required"))
-        
-        # Clean and validate the phone number
+
+        # Clean the phone number explicitly
         clean_phone = self.new_phone.replace('+251', '').replace('251', '').strip()
         if not clean_phone:
             raise ValidationError(_("Invalid phone number format"))
-        
-        # Handle source_id
-        source_id = False
-        if self.source_id:
-            source_id = self.source_id.id
-        else:
-            default_source = self.env['utm.source'].search([('name', '=', '6033')], limit=1)
-            if not default_source:
-                default_source = self.env['utm.source'].create({'name': '6033'})
-            source_id = default_source.id
 
-        # Prepare lead values - using ONLY the clean phone number (no phone_ids)
+        # Handle source_id explicitly
+        source_id = self.source_id.id if self.source_id else self.env['utm.source'].search([('name', '=', '6033')], limit=1).id
+
+        # Determine the stage (crm_stage_id)
+        stage_id = self.crm_stage_id.id if self.crm_stage_id else self.env['crm.stage'].search([], limit=1).id
+
+        # Prepare lead values explicitly assigning user_id to assigned_manager_id
         lead_values = {
             'name': self.name or f"Lead from {self.customer_name.strip()}",
             'customer_name': self.customer_name.strip(),
-            'phone_no': clean_phone,  # Only the primary phone number
+            'phone_no': clean_phone,
             'site_ids': [(6, 0, self.site_ids.ids)],
             'country_id': self.country_id.id,
             'source_id': source_id,
-            'user_id': self.assigned_manager_id.id,
+            'user_id': assigned_user.id,  # explicitly assigned manager id
+            'stage_id': stage_id,  # explicitly assign the stage
             'type': 'opportunity',
         }
 
-        # Create the lead (without linking any phone records)
-        lead = self.env['crm.lead'].create(lead_values)
-        
+      
+        # Create the CRM lead explicitly
+        # lead = self.env['crm.lead'].sudo().create(lead_values)
+        lead = self.env['crm.lead'].with_user(assigned_user).create(lead_values)
+
+        if assigned_user.partner_id:
+                    lead.message_subscribe(partner_ids=[assigned_user.partner_id.id])
+
+        # Mark the record as sent explicitly
+        self.state_crm = 'sent'
+
         return {
             'name': _('CRM Lead'),
             'view_mode': 'form',
             'res_model': 'crm.lead',
             'res_id': lead.id,
             'type': 'ir.actions.act_window',
+            'context': {
+                'default_user_id': assigned_user.id
+            }
         }
-
 
     @api.constrains('source_id')
     def _check_source_id(self):
@@ -148,22 +177,17 @@ class CrmLeadCallCenter(models.Model):
         if call_center_group and self.env.user in call_center_group.users:
             self.source_id = 6033
 
-    @api.depends('country_id', 'phone_number')
-    def _compute_full_phone(self):
-        for record in self:
-            if record.country_id and record.phone_number:
-                country_code = record.country_id.phone_code or ''
-                record.full_phone = f'+{country_code}{record.phone_number}'
-            else:
-                record.full_phone = ''
+    @api.onchange('new_phone')
+    def _onchange_validate_phone(self):
+            for record in self:
+                if record.new_phone and record.country_id and record.country_id.code:
+                    try:
+                        parsed = phonenumbers.parse(record.new_phone, record.country_id.code)
+                        if not phonenumbers.is_valid_number(parsed):
+                            raise ValidationError(_('Invalid phone number for selected country'))
+                    except Exception as e:
+                        raise ValidationError(_('Invalid phone number format: %s') % str(e))
                 
-    @api.depends('full_phone')
-    def _compute_full_phone_ids(self):
-        """Compute the IDs of all registered phone numbers to exclude them from the selection."""
-        all_phone_ids = self.env['crm.callcenter.phone'].search([]).ids
-        for record in self:
-            record.full_phone_ids = all_phone_ids
-
     @api.onchange('phone_number')
     def _onchange_validate_phone(self):
         for record in self:
